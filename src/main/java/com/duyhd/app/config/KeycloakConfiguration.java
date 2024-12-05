@@ -18,19 +18,47 @@ import static org.keycloak.OAuth2Constants.CLIENT_CREDENTIALS;
 @Configuration
 public class KeycloakConfiguration {
 
-    @Autowired
-    Environment env;
+    @Value("${keycloak.server-url}")
+    private String serverUrl;
+
+    @Value("${keycloak.realm}")
+    private String realm;
+
+    @Value("${keycloak.username}")
+    private String username;
+
+    @Value("${keycloak.password}")
+    private String password;
+
+    @Value("${keycloak.resource}")
+    private String resource;
+
+    @Value("${keycloak.credentials.secret}")
+    private String credentialsSecret;
 
     @Bean
     public Keycloak getKeycloak() {
-        return Keycloak.getInstance(
-                env.getProperty("keycloak.server-url"),
-                env.getProperty("keycloak.realm"),
-                env.getProperty("keycloak.username"),
-                env.getProperty("keycloak.password"),
-                env.getProperty("keycloak.resource"),
-                env.getProperty("keycloak.credentials.secret")
-        );
+        val keycloak = KeycloakBuilder.builder()
+                .serverUrl(serverUrl)
+                .grantType(OAuth2Constants.PASSWORD)
+                .realm("master")
+                .clientId("admin-cli")
+                .username(username)
+                .password(password)
+                .build();
+//        keycloak.tokenManager().getAccessToken();
+
+        return keycloak;
+    }
+
+    @Bean
+    public UsersResource usersResource(final Keycloak keycloak) {
+        return keycloak.realm(realm).users();
+    }
+
+    @Bean
+    public GroupsResource groupResource(final Keycloak keycloak) {
+        return keycloak.realm(realm).groups();
     }
 }
 

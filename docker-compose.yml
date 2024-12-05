@@ -1,22 +1,64 @@
+#version: '3.9'
+#services:
+#  keycloak:
+#    image: duyme18/keycloak:26.0.7
+#    container_name: keycloak_server
+#    hostname: 5b0b5e6bc3b9
+#    user: "1000"
+#    environment:
+#      - KC_BOOTSTRAP_ADMIN_USERNAME=admin
+#      - KC_BOOTSTRAP_ADMIN_PASSWORD=admin
+#      - KC_RUN_IN_CONTAINER=true
+#    working_dir: /
+#    ports:
+#      - "8080:8080"
+#    restart: unless-stopped
+#    command: start-dev
+#    labels:
+#      architecture: "aarch64"
+#      build-date: "2024-12-02T07:58:58Z"
+#      description: "Keycloak Server Image"
+#      org.opencontainers.image.created: "2024-12-03T07:16:32.656Z"
+#      org.opencontainers.image.version: "26.0.7"
+
 version: '3.9'
 services:
+  postgresql:
+    image: duyme18/postgres:15
+    container_name: postgres_server
+    hostname: 07c0ef7f3a9e
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: keycloakdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   keycloak:
     image: duyme18/keycloak:26.0.7
     container_name: keycloak_server
     hostname: 5b0b5e6bc3b9
-    user: "1000"
+    command: start-dev
+    restart: unless-stopped
     environment:
-      - KC_BOOTSTRAP_ADMIN_USERNAME=admin
-      - KC_BOOTSTRAP_ADMIN_PASSWORD=admin
-      - KC_RUN_IN_CONTAINER=true
-    working_dir: /
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgresql
+      KC_DB_URL_DATABASE: keycloakdb
+      KC_DB_USERNAME: admin
+      KC_DB_PASSWORD: admin
+      KC_HOSTNAME: localhost
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_RUN_IN_CONTAINER: true
     ports:
       - "8080:8080"
-    restart: unless-stopped
-    command: start-dev
-    labels:
-      architecture: "aarch64"
-      build-date: "2024-12-02T07:58:58Z"
-      description: "Keycloak Server Image"
-      org.opencontainers.image.created: "2024-12-03T07:16:32.656Z"
-      org.opencontainers.image.version: "26.0.7"
+    depends_on:
+      - postgresql
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+
+volumes:
+  postgres_data:
+  keycloak_data:
