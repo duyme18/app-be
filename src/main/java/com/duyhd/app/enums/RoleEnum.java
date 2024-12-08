@@ -1,4 +1,4 @@
-package com.duyhd.app.constant;
+package com.duyhd.app.enums;
 
 import lombok.Getter;
 

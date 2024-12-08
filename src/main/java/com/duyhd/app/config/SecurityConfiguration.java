@@ -1,84 +1,76 @@
 package com.duyhd.app.config;
 
-import com.duyhd.app.constant.RoleEnum;
-import jakarta.servlet.DispatcherType;
-import lombok.RequiredArgsConstructor;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Stream;
+
 import org.springframework.context.annotation.Bean;
-import org.springframework.http.HttpMethod;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
-import org.springframework.security.web.util.matcher.NegatedRequestMatcher;
-import org.springframework.security.web.util.matcher.OrRequestMatcher;
-import org.springframework.security.web.util.matcher.RequestMatcher;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-
+/**
+ * @author ch4mp&#64;c4-soft.com
+ */
+@Configuration
 @EnableWebSecurity
-@RequiredArgsConstructor
+@EnableMethodSecurity
 public class SecurityConfiguration {
-    private static final RequestMatcher PUBLIC_APIS = new OrRequestMatcher(
-            new AntPathRequestMatcher("/**", HttpMethod.OPTIONS.name()),
-            new AntPathRequestMatcher("/swagger-ui/**"),
-            new AntPathRequestMatcher("/v3/api-docs/**"),
-            new AntPathRequestMatcher("/register"),
-            new AntPathRequestMatcher("/login"),
-            new AntPathRequestMatcher("/forgot"),
-            new AntPathRequestMatcher("/generate-otp"),
-            new AntPathRequestMatcher("/validate-otp"),
-            new AntPathRequestMatcher("/change-password"),
-            new AntPathRequestMatcher("/me")
-    );
-    private static final List<String> corsMethodAllows = new ArrayList<>(List.of("GET", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"));
-    private static final List<String> corsHeaderAllows = new ArrayList<>(List.of("User-Agent", "Origin", "X-Requested-With", "Accept", "Content-Type", "Authorization", "authorization", "Accept-Language", "Dnt", "Access-Control-Allow-Origin", "Referer"));
 
-    private final JwtConverter jwtConverter;
-
-    @Bean
-    CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedMethods(corsMethodAllows);
-        configuration.setAllowedHeaders(corsHeaderAllows);
-        configuration.setAllowCredentials(false);
-        configuration.setMaxAge(10L * 60 * 60);
-        configuration.setAllowedOrigins(Collections.singletonList("*"));
-        configuration.setAllowedOriginPatterns(Collections.singletonList("*"));
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
-        return source;
+    interface AuthoritiesConverter extends Converter<Map<String, Object>, Collection<GrantedAuthority>> {
     }
 
     @Bean
-    protected SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http
-                .cors(httpSecurityCorsConfigurer -> httpSecurityCorsConfigurer.configurationSource(corsConfigurationSource()))
-                .authorizeHttpRequests(authorizeRequests -> {
+    AuthoritiesConverter realmRolesAuthoritiesConverter() {
+        return claims -> {
+            final var realmAccess = Optional.ofNullable((Map<String, Object>) claims.get("realm_access"));
+            final var roles =
+                    realmAccess.flatMap(map -> Optional.ofNullable((List<String>) map.get("roles")));
+            return roles.map(List::stream).orElse(Stream.empty()).map(SimpleGrantedAuthority::new)
+                    .map(GrantedAuthority.class::cast).toList();
+        };
+    }
 
-                    authorizeRequests.requestMatchers("/admin/**").hasRole(RoleEnum.ADMIN.name());
-                    authorizeRequests.requestMatchers("/customer/**").hasRole(RoleEnum.USER.name());
-//                    authorizeRequests.requestMatchers(PUBLIC_APIS).permitAll();
+    @Bean
+    JwtAuthenticationConverter authenticationConverter(
+            Converter<Map<String, Object>, Collection<GrantedAuthority>> authoritiesConverter) {
+        JwtAuthenticationConverter jwtAuthenticationConverter = new JwtAuthenticationConverter();
+        jwtAuthenticationConverter
+                .setJwtGrantedAuthoritiesConverter(jwt -> authoritiesConverter.convert(jwt.getClaims()));
+        return jwtAuthenticationConverter;
+    }
 
-//                    authorizeRequests.requestMatchers(new NegatedRequestMatcher(PUBLIC_APIS)).authenticated();
-                    authorizeRequests.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll();
-                })
-                .oauth2ResourceServer(oauth2Resource ->
-                        oauth2Resource.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtConverter))
-                )
-                .csrf(AbstractHttpConfigurer::disable);
+    @Bean
+    SecurityFilterChain resourceServerSecurityFilterChain(HttpSecurity http,
+                                                          Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter) throws Exception {
+        http.oauth2ResourceServer(resourceServer -> {
+            resourceServer.jwt(jwtDecoder -> {
+                jwtDecoder.jwtAuthenticationConverter(jwtAuthenticationConverter);
+            });
+        });
+
+        http.sessionManagement(sessions -> {
+            sessions.sessionCreationPolicy(SessionCreationPolicy.STATELESS);
+        }).csrf(csrf -> {
+            csrf.disable();
+        });
+
+        http.authorizeHttpRequests(requests -> {
+            requests.requestMatchers("/me").authenticated();
+            requests.anyRequest().denyAll();
+        });
+
         return http.build();
-    }
-
-    @Bean
-    public PasswordEncoder encoder() {
-        return new BCryptPasswordEncoder();
     }
 }
